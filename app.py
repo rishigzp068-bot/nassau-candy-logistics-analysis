@@ -8,7 +8,7 @@ st.set_page_config(page_title="Nassau Candy Logistics Dashboard", layout="wide",
 # 2. Title & Overview
 st.title("🍬 Nassau Candy Distributor — Route Efficiency Dashboard")
 st.markdown("Interactive analytics portal monitoring factory-to-customer logistics performance, delivery timelines, and infrastructure bottlenecks.")
-st.hr()
+st.divider()
 
 # 3. Load Dataset Safely
 @st.cache_data

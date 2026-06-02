@@ -1,16 +1,142 @@
-# Nassau Candy Distributor - Route Efficiency Analysis
+import streamlit as st
+import pandas as pd
+import plotly.express as px
 
-## Project Overview
-This project focuses on optimizing logistics and distribution operations for Nassau Candy Distributor. By building a Python data pipeline, we analyzed 10,194 historical fulfillment transactions to evaluate shipping lead times, isolate regional infrastructure constraints, and benchmark delivery methods.
+# 1. Set Page Configuration
+st.set_page_config(page_title="Nassau Candy Logistics Dashboard", layout="wide", page_icon="🍬")
 
-## Data Pipeline & Methodology
-Using **Python and Pandas**, the following operations were executed:
-1. **Feature Engineering:** Calculated explicit `Shipping Lead Time` as `Ship Date` minus `Order Date`.
-2. **Factory Mapping:** Associated item classifications back to five physical production facilities based on administrative business rules.
-3. **Route Structuring:** Automated the generation of `Origin Factory -> Destination State` transit vectors.
-4. **Statistical Aggregation:** Calculated mean delivery durations, transaction volumes, and performance margins across regions and ship modes.
+# 2. Title & Overview
+st.title("🍬 Nassau Candy Distributor — Route Efficiency Dashboard")
+st.markdown("Interactive analytics portal monitoring factory-to-customer logistics performance, delivery timelines, and infrastructure bottlenecks.")
+st.hr()
 
-## Key Insights
-* **Network Baseline:** The global average shipping lead time is 1,320.84 days.
-* **Geographic Bottlenecks:** Distribution corridors serving New Jersey, New Hampshire, and Connecticut exhibit severe infrastructure friction, with turnaround times stretching to 1,641–1,642 days.
-* **The Shipping Paradox:** Standard Class ground shipping yields the fastest turnaround velocity across the network (1,314.33 days), whereas premium First Class methods consistently underperform (1,338.28 days), pointing to internal hub consolidation backlogs rather than carrier transit delays.
+# 3. Load Dataset Safely
+@st.cache_data
+def load_data():
+    df = pd.read_excel('Final Nassau Candy Distributor.xlsx')
+    df['Order Date'] = pd.to_datetime(df['Order Date'])
+    df['Ship Date'] = pd.to_datetime(df['Ship Date'])
+    df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
+    
+    factory_map = {
+        'Chocolates': 'Sugar Shack',
+        'Gummy Bears': 'Secret Factory',
+        'Lollipops': 'The Other Factory',
+        'Licorice': 'Sweet Station',
+        'Fudge': 'Candy Corner'
+    }
+    df['Manufacturing Factory'] = df['Category'].map(factory_map).fillna('Main Factory Hub')
+    df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province']
+    return df
+
+try:
+    df = load_data()
+except Exception as e:
+    st.error("Error loading dataset file. Please verify 'Final Nassau Candy Distributor.xlsx' is uploaded to your repository.")
+    st.stop()
+
+# 4. Sidebar Filters (User Capabilities)
+st.sidebar.header("🎯 Filter Controls")
+
+# Date Filter
+min_date, max_date = df['Order Date'].min().to_pydatetime(), df['Order Date'].max().to_pydatetime()
+start_date, end_date = st.sidebar.date_input("Date Range Selection", [min_date, max_date], min_value=min_date, max_value=max_date)
+
+# Region/State Filter
+available_states = sorted(df['State/Province'].dropna().unique())
+selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states[:5])
+
+# Ship Mode Filter
+available_modes = sorted(df['Ship Mode'].dropna().unique())
+selected_modes = st.sidebar.multiselect("Select Shipping Methods", available_modes, default=available_modes)
+
+# Lead-time Slider Threshold
+max_days = int(df['Shipping Lead Time'].max())
+selected_threshold = st.sidebar.slider("Lead-Time Highlight Threshold (Days)", 0, max_days, 1400)
+
+# Apply Filtered Logic
+filtered_df = df[
+    (df['Order Date'] >= pd.to_datetime(start_date)) & 
+    (df['Order Date'] <= pd.to_datetime(end_date)) & 
+    (df['State/Province'].isin(selected_states)) & 
+    (df['Ship Mode'].isin(selected_modes))
+]
+
+# 5. Core Dashboard KPI Summary Cards
+kpi1, kpi2, kpi3 = st.columns(3)
+with kpi1:
+    st.metric(label="📊 Total Shipments Monitored", value=f"{len(filtered_df):,}")
+with kpi2:
+    st.metric(label="⏱️ Global Average Lead Time", value=f"{filtered_df['Shipping Lead Time'].mean():.2f} Days")
+with kpi3:
+    st.metric(label="🚨 Shipments Exceeding Threshold", value=f"{len(filtered_df[filtered_df['Shipping Lead Time'] > selected_threshold]):,}")
+
+st.hr()
+
+# 6. Required Module A: Route Efficiency Overview & Leaderboard
+st.header("1. 🚀 Route Performance Leaderboard")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("🏆 Top 5 Fastest Logistic Lanes")
+    fastest = filtered_df.groupby('Route')['Shipping Lead Time'].mean().reset_index().sort_values('Shipping Lead Time').head(5)
+    fig_fast = px.bar(fastest, x='Shipping Lead Time', y='Route', orientation='h', color='Shipping Lead Time', color_continuous_scale='Blues', labels={'Shipping Lead Time':'Avg Days'})
+    st.plotly_chart(fig_fast, use_container_width=True)
+
+with col2:
+    st.subheader("🛑 Top 5 Slowest Infrastructure Bottlenecks")
+    slowest = filtered_df.groupby('Route')['Shipping Lead Time'].mean().reset_index().sort_values('Shipping Lead Time', ascending=False).head(5)
+    fig_slow = px.bar(slowest, x='Shipping Lead Time', y='Route', orientation='h', color='Shipping Lead Time', color_continuous_scale='Reds', labels={'Shipping Lead Time':'Avg Days'})
+    st.plotly_chart(fig_slow, use_container_width=True)
+
+st.hr()
+
+# 7. Required Module B: Geographic Region & State Performance Insights
+st.header("2. 🗺️ State-Level Performance Insights & Regional Bottlenecks")
+state_geo = filtered_df.groupby('State/Province')['Shipping Lead Time'].mean().reset_index()
+
+fig_map = px.choropleth(
+    state_geo, 
+    locations='State/Province', 
+    locationmode="USA-states", 
+    color='Shipping Lead Time',
+    scope="usa",
+    color_continuous_scale="YlOrRd",
+    labels={'Shipping Lead Time':'Avg Lead Time (Days)'},
+    title="Geographic Heatmap of Shipping Delays by Destination State"
+)
+st.plotly_chart(fig_map, use_container_width=True)
+
+st.hr()
+
+# 8. Analytical Findings Executive Text Area
+st.header("📌 Operational Insights Summary")
+st.info("""
+* **The Shipping Paradox:** Standard Processing configurations systematically outpace Express and First Class shipping lanes. This operational conflict highlights severe administrative scheduling bottlenecks inside our primary fulfillment facilities.
+* **Geographic Bottlenecks:** Distribution corridors serving New Jersey, New Hampshire, and Connecticut exhibit severe infrastructure friction, with turnaround times stretching to 1,641-1,642 days.
+* **Actionable Countermeasure:** We recommend executing an immediate consolidation protocol to shift regional freight management into a centralized logistics hub model.
+""")
+
+st.hr()
+
+# 9. Required Module C: Ship Mode Performance Breakdown
+st.header("3. 🚢 Shipping Method Operational Comparison")
+ship_mode_df = filtered_df.groupby('Ship Mode')['Shipping Lead Time'].mean().reset_index().sort_values('Shipping Lead Time')
+
+fig_ship = px.bar(
+    ship_mode_df, 
+    x='Ship Mode', 
+    y='Shipping Lead Time', 
+    color='Ship Mode',
+    text_auto='.2f',
+    title="Transit Velocity Paradox: Speed Performance by Choice of Courier Mode",
+    labels={'Shipping Lead Time':'Mean Lead Time (Days)'}
+)
+st.plotly_chart(fig_ship, use_container_width=True)
+
+st.hr()
+
+# 10. Required Module D: Order-Level Shipment Timelines (Drill-Down Matrix)
+st.header("4. 🔍 Order-Level Drill-Down Audit Trail")
+st.markdown("Granular lookup tool displaying raw shipment transactions filtering specific historical outliers.")
+st.dataframe(filtered_df[['Order ID', 'Order Date', 'Ship Date', 'Manufacturing Factory', 'State/Province', 'Ship Mode', 'Shipping Lead Time']].sort_values('Shipping Lead Time', ascending=False), use_container_width=True)

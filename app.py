@@ -10,25 +10,22 @@ st.title("🍬 Nassau Candy Distributor — Route Efficiency Dashboard")
 st.markdown("Interactive analytics portal monitoring factory-to-customer logistics performance, delivery timelines, and infrastructure bottlenecks.")
 st.divider()
 
-# 3. Load Dataset Safely (Smart Flexible Column Fix)
+# 3. Load Dataset Safely
 @st.cache_data
 def load_data():
     import os
-    # Automatically scan the folder for any file ending in .xlsx or .xls
     excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') or f.endswith('.xls')]
     
     if not excel_files:
         raise FileNotFoundError("No Excel data sheets found in the repository folder.")
     
-    # Read the first available excel file automatically
     target_file = excel_files[0]
     df = pd.read_excel(target_file)
     
-    # --- FLEXIBLE DATE COLUMN DETECTION ---
+    # --- FLEXIBLE COLUMN DETECTION ---
     order_col = None
     ship_col = None
     
-    # Look for any column matching variations of Order Date and Ship Date
     for col in df.columns:
         col_clean = str(col).strip().lower().replace(" ", "").replace("_", "")
         if "orderdate" in col_clean or "dateoforder" in col_clean or "bookingdate" in col_clean:
@@ -36,7 +33,6 @@ def load_data():
         elif "shipdate" in col_clean or "dateofship" in col_clean or "shippingdate" in col_clean:
             ship_col = col
             
-    # Fallbacks if strict text patterns aren't found (use the first two date-looking columns)
     if not order_col or not ship_col:
         date_cols = [c for c in df.columns if "date" in str(c).lower()]
         if len(date_cols) >= 2:
@@ -46,32 +42,28 @@ def load_data():
             order_col = order_col or df.columns[0]
             ship_col = ship_col or df.columns[1]
             
-    # Standardize column mappings
+    # Parse dates cleanly
     df['Order Date'] = pd.to_datetime(df[order_col], errors='coerce')
     df['Ship Date'] = pd.to_datetime(df[ship_col], errors='coerce')
     
-    # Drop rows with broken dates to avoid calculation crashes
     df = df.dropna(subset=['Order Date', 'Ship Date'])
     df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
     
-    # Safe factory assignment fallback mapping
+    # Factory Mapping Logic
     factory_map = {
-        'Chocolates': 'Sugar Shack',
-        'Gummy Bears': 'Secret Factory',
-        'Lollipops': 'The Other Factory',
-        'Licorice': 'Sweet Station',
-        'Fudge': 'Candy Corner'
+        'Chocolates': 'Sugar Shack', 'Chocolate': 'Sugar Shack',
+        'Gummy Bears': 'Secret Factory', 'Sugar': 'Secret Factory',
+        'Lollipops': 'The Other Factory', 'Other': 'The Other Factory',
+        'Licorice': 'Sweet Station', 'Fudge': 'Candy Corner'
     }
     
-    # Check if 'Category' column actually exists
-    if 'Category' in df.columns:
+    if 'Division' in df.columns:
+        df['Manufacturing Factory'] = df['Division'].map(factory_map).fillna('Main Factory Hub')
+    elif 'Category' in df.columns:
         df['Manufacturing Factory'] = df['Category'].map(factory_map).fillna('Main Factory Hub')
-    elif 'Product Category' in df.columns:
-        df['Manufacturing Factory'] = df['Product Category'].map(factory_map).fillna('Main Factory Hub')
     else:
         df['Manufacturing Factory'] = 'Main Factory Hub'
         
-    # Check if 'State/Province' exists
     if 'State/Province' in df.columns:
         df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
     elif 'State' in df.columns:
@@ -90,18 +82,22 @@ except Exception as e:
     st.info("Please make sure an Excel spreadsheet data file is uploaded to the main folder of this repository.")
     st.stop()
 
-# 4. Sidebar Filters (User Capabilities)
+# 4. Sidebar Filters
 st.sidebar.header("🎯 Filter Controls")
 
-# Date Filter Safeguard
+# Fixed Absolute Date Range Selection
 if len(df) > 0:
-    min_date, max_date = df['Order Date'].min().to_pydatetime(), df['Order Date'].max().to_pydatetime()
-    start_date, end_date = st.sidebar.date_input("Date Range Selection", [min_date, max_date], min_value=min_date, max_value=max_date)
+    min_date = df['Order Date'].min().to_pydatetime()
+    max_date = df['Order Date'].max().to_pydatetime()
+    
+    # Using explicit separate boxes prevents empty array assignment errors
+    start_date = st.sidebar.date_input("Start Order Date", min_date, min_value=min_date, max_value=max_date)
+    end_date = st.sidebar.date_input("End Order Date", max_date, min_value=min_date, max_value=max_date)
 else:
-    start_date, end_date = pd.to_datetime("2020-01-01"), pd.to_datetime("2026-12-31")
-    st.sidebar.write("Waiting for data timelines...")
+    start_date = pd.to_datetime("2024-01-01")
+    end_date = pd.to_datetime("2025-12-31")
 
-# Region/State Filter - FIXED: Defaults to ALL states to ensure charts never load blank
+# Region/State Filter (Defaults to All)
 available_states = sorted(df['State/Province'].dropna().unique()) if len(df) > 0 else []
 selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states)
 
@@ -116,8 +112,9 @@ else:
 max_days = int(df['Shipping Lead Time'].max()) if len(df) > 0 else 10
 selected_threshold = st.sidebar.slider("Lead-Time Highlight Threshold (Days)", 0, max_days, int(max_days * 0.8) if max_days > 0 else 5)
 
-# Apply Filtered Logic
-mask = (df['Order Date'] >= pd.to_datetime(start_date)) & (df['Order Date'] <= pd.to_datetime(end_date))
+# --- STRICT DOCKING FILTER ENGINE ---
+mask = (df['Order Date'].dt.date >= start_date) & (df['Order Date'].dt.date <= end_date)
+
 if selected_states:
     mask = mask & (df['State/Province'].isin(selected_states))
 if selected_modes and 'Ship Mode' in df.columns:
@@ -155,7 +152,7 @@ if len(filtered_df) > 0:
         fig_slow = px.bar(slowest, x='Shipping Lead Time', y='Route', orientation='h', color='Shipping Lead Time', color_continuous_scale='Reds', labels={'Shipping Lead Time':'Avg Days'})
         st.plotly_chart(fig_slow, use_container_width=True)
 else:
-    st.warning("No data available for the selected filters.")
+    st.error("No data matching current date or filter controls. Adjust filters in the sidebar.")
 
 st.divider()
 

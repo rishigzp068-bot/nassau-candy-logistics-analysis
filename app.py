@@ -101,9 +101,9 @@ else:
     start_date, end_date = pd.to_datetime("2020-01-01"), pd.to_datetime("2026-12-31")
     st.sidebar.write("Waiting for data timelines...")
 
-# Region/State Filter
+# Region/State Filter - FIXED: Defaults to ALL states to ensure charts never load blank
 available_states = sorted(df['State/Province'].dropna().unique()) if len(df) > 0 else []
-selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states[:5] if len(available_states) >= 5 else available_states)
+selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states)
 
 # Ship Mode Filter
 if 'Ship Mode' in df.columns:

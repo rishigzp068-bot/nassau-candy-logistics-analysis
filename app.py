@@ -43,7 +43,7 @@ def load_data():
             order_col = order_col or df.columns[0]
             ship_col = ship_col or df.columns[1]
             
-    # CRITICAL FIX: Convert and remove all NaT/NaN/Broken dates instantly
+    # Convert and clean dates safely
     df[order_col] = pd.to_datetime(df[order_col], errors='coerce')
     df[ship_col] = pd.to_datetime(df[ship_col], errors='coerce')
     df = df.dropna(subset=[order_col, ship_col])
@@ -90,7 +90,6 @@ except Exception as e:
 # 4. Sidebar Filters
 st.sidebar.header("🎯 Filter Controls")
 
-# FIXED DATETIME INPUT HANDLING: Ensuring zero null values pass to the slider
 if len(df) > 0 and not df['Order Date'].isna().all():
     min_date = df['Order Date'].min().date()
     max_date = df['Order Date'].max().date()
@@ -122,7 +121,6 @@ if selected_states:
 if selected_modes and 'Ship Mode' in df.columns:
     filtered_df = filtered_df[filtered_df['Ship Mode'].isin(selected_modes)]
 
-# Fallback protection so dashboard never goes completely blank
 if len(filtered_df) == 0:
     filtered_df = df.copy()
 
@@ -206,8 +204,12 @@ st.divider()
 st.header("4. 🔍 Order-Level Drill-Down Audit Trail")
 st.markdown("Granular lookup tool displaying raw shipment transactions filtering specific historical outliers.")
 
-display_cols = ['Order ID', 'Order Date', 'Ship Date', 'Manufacturing Factory', 'State/Province', 'Shipping Lead Time']
-if 'Ship Mode' in filtered_df.columns:
-    display_cols.insert(4, 'Ship Mode')
+# FIXED: Dynamic array filter isolates existing index keys to protect against KeyError structural crashes
+potential_cols = ['Order ID', 'Order Date', 'Ship Date', 'Ship Mode', 'Manufacturing Factory', 'State/Province', 'State', 'Shipping Lead Time']
+display_cols = [col for col in potential_cols if col in filtered_df.columns]
 
-st.dataframe(filtered_df[display_cols].sort_values('Shipping Lead Time', ascending=False), use_container_width=True)
+if len(filtered_df) > 0:
+    sorted_matrix = filtered_df[display_cols].sort_values('Shipping Lead Time', ascending=False)
+    st.dataframe(sorted_matrix, use_container_width=True)
+else:
+    st.warning("No tracking items found matching your filter criteria.")

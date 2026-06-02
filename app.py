@@ -10,10 +10,21 @@ st.title("🍬 Nassau Candy Distributor — Route Efficiency Dashboard")
 st.markdown("Interactive analytics portal monitoring factory-to-customer logistics performance, delivery timelines, and infrastructure bottlenecks.")
 st.divider()
 
-# 3. Load Dataset Safely
+# 3. Load Dataset Safely (Smart Auto-Scanner Fix)
 @st.cache_data
 def load_data():
-    df = pd.read_excel('Final Nassau Candy Distributor.xlsx')
+    import os
+    # Automatically scan the folder for any file ending in .xlsx or .xls
+    excel_files = [f for f in os.listdir('.') if f.endswith('.xlsx') or f.endswith('.xls')]
+    
+    if not excel_files:
+        raise FileNotFoundError("No Excel data sheets found in the repository folder.")
+    
+    # Read the first available excel file automatically to avoid naming errors
+    target_file = excel_files[0]
+    df = pd.read_excel(target_file)
+    
+    # Process core shipment date fields
     df['Order Date'] = pd.to_datetime(df['Order Date'])
     df['Ship Date'] = pd.to_datetime(df['Ship Date'])
     df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
@@ -50,7 +61,8 @@ def load_data():
 try:
     df = load_data()
 except Exception as e:
-    st.error("Error loading dataset file. Please verify 'Final Nassau Candy Distributor.xlsx' is uploaded to your repository.")
+    st.error(f"Data Connection Error: {e}")
+    st.info("Please make sure an Excel spreadsheet data file is uploaded to the main folder of this repository.")
     st.stop()
 
 # 4. Sidebar Filters (User Capabilities)
@@ -95,7 +107,7 @@ with kpi3:
     high_delays = len(filtered_df[filtered_df['Shipping Lead Time'] > selected_threshold]) if len(filtered_df) > 0 else 0
     st.metric(label="🚨 Shipments Exceeding Threshold", value=f"{high_delays:,}")
 
-st.hr()
+st.divider()
 
 # 6. Required Module A: Route Efficiency Overview & Leaderboard
 st.header("1. 🚀 Route Performance Leaderboard")
@@ -116,9 +128,9 @@ if len(filtered_df) > 0:
 else:
     st.warning("No data available for the selected filters.")
 
-st.hr()
+st.divider()
 
-# 7. Required Module B: Geographic Region & State Performance Insights (Fixed Error Free Version)
+# 7. Required Module B: Geographic Region & State Performance Insights
 st.header("2. 🗺️ State-Level Performance Insights & Regional Bottlenecks")
 if len(filtered_df) > 0:
     state_geo = filtered_df.groupby('State/Province')['Shipping Lead Time'].mean().reset_index().sort_values('Shipping Lead Time', ascending=False)
@@ -138,7 +150,7 @@ if len(filtered_df) > 0:
 else:
     st.warning("No geographic details available for current filter settings.")
 
-st.hr()
+st.divider()
 
 # 8. Analytical Findings Executive Text Area
 st.header("📌 Operational Insights Summary")
@@ -148,7 +160,7 @@ st.info("""
 * **Actionable Countermeasure:** We recommend executing an immediate consolidation protocol to shift regional freight management into a centralized logistics hub model.
 """)
 
-st.hr()
+st.divider()
 
 # 9. Required Module C: Ship Mode Performance Breakdown
 st.header("3. 🚢 Shipping Method Operational Comparison")
@@ -168,7 +180,7 @@ if 'Ship Mode' in filtered_df.columns and len(filtered_df) > 0:
 else:
     st.warning("Ship Mode information is missing or filtered out.")
 
-st.hr()
+st.divider()
 
 # 10. Required Module D: Order-Level Shipment Timelines (Drill-Down Matrix)
 st.header("4. 🔍 Order-Level Drill-Down Audit Trail")

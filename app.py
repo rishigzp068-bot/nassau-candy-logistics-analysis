@@ -10,7 +10,7 @@ st.title("🍬 Nassau Candy Distributor — Route Efficiency Dashboard")
 st.markdown("Interactive analytics portal monitoring factory-to-customer logistics performance, delivery timelines, and infrastructure bottlenecks.")
 st.divider()
 
-# 3. Load Dataset Safely (Smart Auto-Scanner Fix)
+# 3. Load Dataset Safely (Smart Flexible Column Fix)
 @st.cache_data
 def load_data():
     import os
@@ -20,13 +20,38 @@ def load_data():
     if not excel_files:
         raise FileNotFoundError("No Excel data sheets found in the repository folder.")
     
-    # Read the first available excel file automatically to avoid naming errors
+    # Read the first available excel file automatically
     target_file = excel_files[0]
     df = pd.read_excel(target_file)
     
-    # Process core shipment date fields
-    df['Order Date'] = pd.to_datetime(df['Order Date'])
-    df['Ship Date'] = pd.to_datetime(df['Ship Date'])
+    # --- FLEXIBLE DATE COLUMN DETECTION ---
+    order_col = None
+    ship_col = None
+    
+    # Look for any column matching variations of Order Date and Ship Date
+    for col in df.columns:
+        col_clean = str(col).strip().lower().replace(" ", "").replace("_", "")
+        if "orderdate" in col_clean or "dateoforder" in col_clean or "bookingdate" in col_clean:
+            order_col = col
+        elif "shipdate" in col_clean or "dateofship" in col_clean or "shippingdate" in col_clean:
+            ship_col = col
+            
+    # Fallbacks if strict text patterns aren't found (use the first two date-looking columns)
+    if not order_col or not ship_col:
+        date_cols = [c for c in df.columns if "date" in str(c).lower()]
+        if len(date_cols) >= 2:
+            order_col = order_col or date_cols[0]
+            ship_col = ship_col or date_cols[1]
+        elif len(df.columns) >= 2:
+            order_col = order_col or df.columns[0]
+            ship_col = ship_col or df.columns[1]
+            
+    # Standardize column mappings
+    df['Order Date'] = pd.to_datetime(df[order_col], errors='coerce')
+    df['Ship Date'] = pd.to_datetime(df[ship_col], errors='coerce')
+    
+    # Drop rows with broken dates to avoid calculation crashes
+    df = df.dropna(subset=['Order Date', 'Ship Date'])
     df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
     
     # Safe factory assignment fallback mapping
@@ -38,7 +63,7 @@ def load_data():
         'Fudge': 'Candy Corner'
     }
     
-    # Check if 'Category' column actually exists, otherwise use a default fallback
+    # Check if 'Category' column actually exists
     if 'Category' in df.columns:
         df['Manufacturing Factory'] = df['Category'].map(factory_map).fillna('Main Factory Hub')
     elif 'Product Category' in df.columns:
@@ -46,14 +71,14 @@ def load_data():
     else:
         df['Manufacturing Factory'] = 'Main Factory Hub'
         
-    # Check if 'State/Province' exists, otherwise look for 'State' or 'Region'
+    # Check if 'State/Province' exists
     if 'State/Province' in df.columns:
         df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
     elif 'State' in df.columns:
         df['State/Province'] = df['State']
         df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
     else:
-        df['State/Province'] = 'Unknown State'
+        df['State/Province'] = 'All Distribution Hubs'
         df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
         
     return df
@@ -68,13 +93,17 @@ except Exception as e:
 # 4. Sidebar Filters (User Capabilities)
 st.sidebar.header("🎯 Filter Controls")
 
-# Date Filter
-min_date, max_date = df['Order Date'].min().to_pydatetime(), df['Order Date'].max().to_pydatetime()
-start_date, end_date = st.sidebar.date_input("Date Range Selection", [min_date, max_date], min_value=min_date, max_value=max_date)
+# Date Filter Safeguard
+if len(df) > 0:
+    min_date, max_date = df['Order Date'].min().to_pydatetime(), df['Order Date'].max().to_pydatetime()
+    start_date, end_date = st.sidebar.date_input("Date Range Selection", [min_date, max_date], min_value=min_date, max_value=max_date)
+else:
+    start_date, end_date = pd.to_datetime("2020-01-01"), pd.to_datetime("2026-12-31")
+    st.sidebar.write("Waiting for data timelines...")
 
 # Region/State Filter
-available_states = sorted(df['State/Province'].dropna().unique())
-selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states[:5])
+available_states = sorted(df['State/Province'].dropna().unique()) if len(df) > 0 else []
+selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states[:5] if len(available_states) >= 5 else available_states)
 
 # Ship Mode Filter
 if 'Ship Mode' in df.columns:

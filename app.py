@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import datetime
 
 # 1. Set Page Configuration
 st.set_page_config(page_title="Nassau Candy Logistics Dashboard", layout="wide", page_icon="🍬")
@@ -42,11 +43,16 @@ def load_data():
             order_col = order_col or df.columns[0]
             ship_col = ship_col or df.columns[1]
             
-    # Clean up dates and compute duration
-    df['Order Date'] = pd.to_datetime(df[order_col], errors='coerce')
-    df['Ship Date'] = pd.to_datetime(df[ship_col], errors='coerce')
-    df = df.dropna(subset=['Order Date', 'Ship Date'])
+    # CRITICAL FIX: Convert and remove all NaT/NaN/Broken dates instantly
+    df[order_col] = pd.to_datetime(df[order_col], errors='coerce')
+    df[ship_col] = pd.to_datetime(df[ship_col], errors='coerce')
+    df = df.dropna(subset=[order_col, ship_col])
     
+    # Standardize column names
+    df['Order Date'] = df[order_col]
+    df['Ship Date'] = df[ship_col]
+    
+    # Calculate Lead Time
     df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
     
     # Factory Assignment Logic
@@ -81,15 +87,21 @@ except Exception as e:
     st.error(f"Data Connection Error: {e}")
     st.stop()
 
-# 4. Sidebar Filter Framework Controls
+# 4. Sidebar Filters
 st.sidebar.header("🎯 Filter Controls")
 
-min_date = df['Order Date'].min().to_pydatetime()
-max_date = df['Order Date'].max().to_pydatetime()
+# FIXED DATETIME INPUT HANDLING: Ensuring zero null values pass to the slider
+if len(df) > 0 and not df['Order Date'].isna().all():
+    min_date = df['Order Date'].min().date()
+    max_date = df['Order Date'].max().date()
+else:
+    min_date = datetime.date(2024, 1, 1)
+    max_date = datetime.date(2025, 12, 31)
+
 start_date = st.sidebar.date_input("Start Order Date", min_date, min_value=min_date, max_value=max_date)
 end_date = st.sidebar.date_input("End Order Date", max_date, min_value=min_date, max_value=max_date)
 
-available_states = sorted(df['State/Province'].dropna().unique())
+available_states = sorted(df['State/Province'].dropna().unique()) if len(df) > 0 else []
 selected_states = st.sidebar.multiselect("Select Destination States", available_states, default=available_states)
 
 if 'Ship Mode' in df.columns:
@@ -98,11 +110,10 @@ if 'Ship Mode' in df.columns:
 else:
     selected_modes = []
 
-max_days = int(df['Shipping Lead Time'].max())
+max_days = int(df['Shipping Lead Time'].max()) if len(df) > 0 else 10
 selected_threshold = st.sidebar.slider("Lead-Time Highlight Threshold (Days)", 0, max_days, int(max_days * 0.5))
 
-# --- MASTER GENERATION BASELINE ---
-# Filter data safely using standard copy methods to avoid any blank dataframes
+# --- FILTER APPLICATION ENGINE ---
 filtered_df = df.copy()
 filtered_df = filtered_df[(filtered_df['Order Date'].dt.date >= start_date) & (filtered_df['Order Date'].dt.date <= end_date)]
 
@@ -111,7 +122,7 @@ if selected_states:
 if selected_modes and 'Ship Mode' in df.columns:
     filtered_df = filtered_df[filtered_df['Ship Mode'].isin(selected_modes)]
 
-# If a filter accidentally strips everything, fall back to the complete dataset so the user always sees charts!
+# Fallback protection so dashboard never goes completely blank
 if len(filtered_df) == 0:
     filtered_df = df.copy()
 
@@ -120,10 +131,10 @@ kpi1, kpi2, kpi3 = st.columns(3)
 with kpi1:
     st.metric(label="📊 Total Shipments Monitored", value=f"{len(filtered_df):,}")
 with kpi2:
-    avg_time = filtered_df['Shipping Lead Time'].mean()
+    avg_time = filtered_df['Shipping Lead Time'].mean() if len(filtered_df) > 0 else 0
     st.metric(label="⏱️ Global Average Lead Time", value=f"{avg_time:.2f} Days")
 with kpi3:
-    high_delays = len(filtered_df[filtered_df['Shipping Lead Time'] > selected_threshold])
+    high_delays = len(filtered_df[filtered_df['Shipping Lead Time'] > selected_threshold]) if len(filtered_df) > 0 else 0
     st.metric(label="🚨 Shipments Exceeding Threshold", value=f"{high_delays:,}")
 
 st.divider()

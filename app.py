@@ -17,13 +17,32 @@ def load_data():
     df['Order Date'] = pd.to_datetime(df['Order Date'])
     df['Ship Date'] = pd.to_datetime(df['Ship Date'])
     df['Shipping Lead Time'] = (df['Ship Date'] - df['Order Date']).dt.days
-    
+    # Safe factory assignment fallback mapping
     factory_map = {
         'Chocolates': 'Sugar Shack',
         'Gummy Bears': 'Secret Factory',
         'Lollipops': 'The Other Factory',
         'Licorice': 'Sweet Station',
         'Fudge': 'Candy Corner'
+    }
+    
+    # Check if 'Category' column actually exists, otherwise use a default fallback
+    if 'Category' in df.columns:
+        df['Manufacturing Factory'] = df['Category'].map(factory_map).fillna('Main Factory Hub')
+    elif 'Product Category' in df.columns:
+        df['Manufacturing Factory'] = df['Product Category'].map(factory_map).fillna('Main Factory Hub')
+    else:
+        df['Manufacturing Factory'] = 'Main Factory Hub'
+        
+    # Check if 'State/Province' exists, otherwise look for 'State' or 'Region'
+    if 'State/Province' in df.columns:
+        df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
+    elif 'State' in df.columns:
+        df['State/Province'] = df['State']
+        df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
+    else:
+        df['State/Province'] = 'Unknown State'
+        df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province'].astype(str)
     }
     df['Manufacturing Factory'] = df['Category'].map(factory_map).fillna('Main Factory Hub')
     df['Route'] = df['Manufacturing Factory'] + " ➔ " + df['State/Province']

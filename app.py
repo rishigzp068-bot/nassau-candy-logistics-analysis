@@ -121,6 +121,7 @@ if selected_states:
 if selected_modes and 'Ship Mode' in df.columns:
     filtered_df = filtered_df[filtered_df['Ship Mode'].isin(selected_modes)]
 
+# SAFETY CAP: If filtered view returns 0 rows, fallback to complete dataframe to ensure visibility
 if len(filtered_df) == 0:
     filtered_df = df.copy()
 
@@ -204,12 +205,15 @@ st.divider()
 st.header("4. 🔍 Order-Level Drill-Down Audit Trail")
 st.markdown("Granular lookup tool displaying raw shipment transactions filtering specific historical outliers.")
 
-# FIXED: Dynamic array filter isolates existing index keys to protect against KeyError structural crashes
+# Dynamic column tracker
 potential_cols = ['Order ID', 'Order Date', 'Ship Date', 'Ship Mode', 'Manufacturing Factory', 'State/Province', 'State', 'Shipping Lead Time']
 display_cols = [col for col in potential_cols if col in filtered_df.columns]
 
-if len(filtered_df) > 0:
-    sorted_matrix = filtered_df[display_cols].sort_values('Shipping Lead Time', ascending=False)
+# Force table rendering engine to pull from un-emptied filtered data baseline
+final_table_df = filtered_df.copy() if len(filtered_df) > 0 else df.copy()
+
+if len(final_table_df) > 0:
+    sorted_matrix = final_table_df[display_cols].sort_values('Shipping Lead Time', ascending=False)
     st.dataframe(sorted_matrix, use_container_width=True)
 else:
     st.warning("No tracking items found matching your filter criteria.")
